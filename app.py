@@ -1,6 +1,10 @@
 from flask import Flask, render_template, request, redirect
 import sqlite3
-import requests
+
+import joblib
+import numpy as np
+# Load trained ML model for health risk prediction
+patient_risk_model = joblib.load("health_model.pkl")
 
 app = Flask(__name__)
 
@@ -16,33 +20,22 @@ def init_db():
             glucose REAL,
             haemoglobin REAL,
             cholesterol REAL,
-            status TEXT
+            remarks TEXT
         )
     """)
     conn.close()
 
 init_db()
 
-# simple health prediction (with API usage)
-def get_health_status(glucose, haemoglobin, cholesterol):
-    try:
-        # calling free API (just to show integration)
-        response = requests.get("https://api.agify.io?name=test")
-        data = response.json()
-        print("API called:", data)
+# This function predicts health risk using trained ML model
+def get_remark(glucose, haemoglobin, cholesterol):
 
-        # basic logic (realistic beginner level)
-        if glucose > 140:
-            return "Diabetes Risk"
-        elif cholesterol > 200:
-            return "High Cholesterol"
-        elif haemoglobin < 12:
-            return "Low Haemoglobin"
-        else:
-            return "Normal"
+    prediction_result = patient_risk_model.predict([[glucose, haemoglobin, cholesterol]])[0]
 
-    except:
-        return "Check manually"
+    if prediction_result == 1:
+        return "High Health Risk (AI Model)"
+    else:
+        return "Normal (AI Model)"
 
 # home page
 @app.route('/')
@@ -62,19 +55,20 @@ def add_data():
     haemoglobin = float(request.form['haemoglobin'])
     cholesterol = float(request.form['cholesterol'])
 
-    status = get_health_status(glucose, haemoglobin, cholesterol)
+    # AI remark generation
+    remarks = get_remark(glucose, haemoglobin, cholesterol)
 
     conn = sqlite3.connect('database.db')
     conn.execute("""
-        INSERT INTO patients (name, dob, email, glucose, haemoglobin, cholesterol, status)
+        INSERT INTO patients (name, dob, email, glucose, haemoglobin, cholesterol, remarks)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (name, dob, email, glucose, haemoglobin, cholesterol, status))
+    """, (name, dob, email, glucose, haemoglobin, cholesterol, remarks))
     conn.commit()
     conn.close()
 
     return redirect('/')
 
-# delete
+# delete patient
 @app.route('/delete/<int:id>')
 def delete_data(id):
     conn = sqlite3.connect('database.db')
@@ -83,7 +77,7 @@ def delete_data(id):
     conn.close()
     return redirect('/')
 
-# update
+# update patient
 @app.route('/update/<int:id>', methods=['POST'])
 def update_data(id):
     name = request.form['name']
@@ -93,14 +87,15 @@ def update_data(id):
     haemoglobin = float(request.form['haemoglobin'])
     cholesterol = float(request.form['cholesterol'])
 
-    status = get_health_status(glucose, haemoglobin, cholesterol)
+    # AI remark generation
+    remarks = get_remark(glucose, haemoglobin, cholesterol)
 
     conn = sqlite3.connect('database.db')
     conn.execute("""
         UPDATE patients 
-        SET name=?, dob=?, email=?, glucose=?, haemoglobin=?, cholesterol=?, status=? 
+        SET name=?, dob=?, email=?, glucose=?, haemoglobin=?, cholesterol=?, remarks=?
         WHERE id=?
-    """, (name, dob, email, glucose, haemoglobin, cholesterol, status, id))
+    """, (name, dob, email, glucose, haemoglobin, cholesterol, remarks, id))
     conn.commit()
     conn.close()
 
